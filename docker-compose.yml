@@ -1,0 +1,235 @@
+version: '3.8'
+
+# AetherFlow Local Development Environment
+# Run: docker-compose up -d
+# Stop: docker-compose down
+
+services:
+  # ============================================================================
+  # Core Services
+  # ============================================================================
+
+  # FastAPI Backend
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-local-dev}
+      - BIGQUERY_DATASET=aether_lakehouse
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PINECONE_API_KEY=${PINECONE_API_KEY:-}
+      - PINECONE_INDEX=aether-market-vectors
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - ENVIRONMENT=development
+    depends_on:
+      - redis
+      - kafka
+    volumes:
+      - ./api:/app:ro
+    networks:
+      - aether-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================================================
+  # Data Infrastructure
+  # ============================================================================
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - aether-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Kafka Ecosystem (Alternative to Pub/Sub)
+  # ============================================================================
+
+  # Zookeeper (required for Kafka)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-logs:/var/lib/zookeeper/log
+    networks:
+      - aether-network
+
+  # Kafka Broker
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    depends_on:
+      - zookeeper
+    networks:
+      - aether-network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Schema Registry (for Avro schemas)
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.5.0
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    depends_on:
+      - kafka
+    networks:
+      - aether-network
+
+  # Kafka UI (for debugging)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - "8082:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: aether-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+    depends_on:
+      - kafka
+      - schema-registry
+    networks:
+      - aether-network
+
+  # ============================================================================
+  # Observability Stack
+  # ============================================================================
+
+  # Prometheus (Metrics)
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - aether-network
+
+  # Grafana (Dashboards)
+  grafana:
+    image: grafana/grafana:10.1.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    networks:
+      - aether-network
+
+  # Jaeger (Distributed Tracing)
+  jaeger:
+    image: jaegertracing/all-in-one:1.50
+    ports:
+      - "16686:16686"  # UI
+      - "14268:14268"  # Collector HTTP
+      - "6831:6831/udp"  # Agent
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - aether-network
+
+  # ============================================================================
+  # Development Tools
+  # ============================================================================
+
+  # BigQuery Emulator (for local testing)
+  bigquery-emulator:
+    image: ghcr.io/goccy/bigquery-emulator:latest
+    ports:
+      - "9050:9050"
+      - "9060:9060"
+    command: >
+      --project=${GCP_PROJECT_ID:-local-dev}
+      --data-from-yaml=/data/schema.yaml
+    volumes:
+      - ./infra/bigquery-schema.yaml:/data/schema.yaml:ro
+    networks:
+      - aether-network
+
+  # Pub/Sub Emulator (for local testing)
+  pubsub-emulator:
+    image: google/cloud-sdk:latest
+    ports:
+      - "8085:8085"
+    command: >
+      gcloud beta emulators pubsub start
+      --project=${GCP_PROJECT_ID:-local-dev}
+      --host-port=0.0.0.0:8085
+    environment:
+      - PUBSUB_PROJECT_ID=${GCP_PROJECT_ID:-local-dev}
+    networks:
+      - aether-network
+
+# ============================================================================
+# Networks
+# ============================================================================
+
+networks:
+  aether-network:
+    driver: bridge
+
+# ============================================================================
+# Volumes
+# ============================================================================
+
+volumes:
+  redis-data:
+  kafka-data:
+  zookeeper-data:
+  zookeeper-logs:
+  prometheus-data:
+  grafana-data:
