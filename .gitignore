@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Pulumi
+.pulumi/
+Pulumi.*.yaml
+!Pulumi.yaml
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets - NEVER commit these
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+service-account.json
+
+# Logs
+*.log
+logs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
