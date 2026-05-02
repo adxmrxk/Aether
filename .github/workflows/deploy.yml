@@ -1,0 +1,223 @@
+name: Deploy AetherFlow
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: us-central1
+  PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+jobs:
+  # Validate and lint code
+  validate:
+    name: Validate Code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install ruff mypy
+
+      - name: Lint with Ruff
+        run: ruff check .
+
+      - name: Type check with MyPy
+        run: mypy api/main.py --ignore-missing-imports
+        continue-on-error: true
+
+  # Preview infrastructure changes (PR only)
+  pulumi-preview:
+    name: Preview Infrastructure
+    runs-on: ubuntu-latest
+    needs: [validate]
+    if: github.event_name == 'pull_request'
+
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: infra/requirements.txt
+
+      - name: Install Pulumi
+        uses: pulumi/actions@v5
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Install dependencies
+        working-directory: infra
+        run: |
+          pip install -r requirements.txt
+
+      - name: Pulumi Preview
+        uses: pulumi/actions@v5
+        with:
+          command: preview
+          stack-name: dev
+          work-dir: infra
+          comment-on-pr: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Deploy infrastructure (main branch only)
+  pulumi-deploy:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: [validate]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    permissions:
+      contents: read
+      id-token: write
+
+    outputs:
+      function_bucket: ${{ steps.pulumi.outputs.function_bucket }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: infra/requirements.txt
+
+      - name: Install Pulumi
+        uses: pulumi/actions@v5
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Install dependencies
+        working-directory: infra
+        run: |
+          pip install -r requirements.txt
+
+      - name: Pulumi Up
+        id: pulumi
+        uses: pulumi/actions@v5
+        with:
+          command: up
+          stack-name: prod
+          work-dir: infra
+
+  # Deploy Cloud Function
+  deploy-function:
+    name: Deploy Cloud Function
+    runs-on: ubuntu-latest
+    needs: [pulumi-deploy]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Deploy Cloud Function
+        run: |
+          gcloud functions deploy aether-market-processor \
+            --gen2 \
+            --runtime=python312 \
+            --region=${{ env.GCP_REGION }} \
+            --source=functions/market_processor \
+            --entry-point=process_market_data \
+            --trigger-topic=aether-market-data \
+            --service-account=aether-processor@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
+            --memory=512MB \
+            --timeout=300s \
+            --max-instances=10 \
+            --set-env-vars="GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }},GCP_LOCATION=${{ env.GCP_REGION }}"
+
+  # Deploy API to Cloud Run
+  deploy-api:
+    name: Deploy API to Cloud Run
+    runs-on: ubuntu-latest
+    needs: [pulumi-deploy]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
+
+      - name: Build and Push Docker image
+        working-directory: api
+        run: |
+          IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/aether/api:${{ github.sha }}"
+          docker build -t $IMAGE .
+          docker push $IMAGE
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy aether-api \
+            --image=${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/aether/api:${{ github.sha }} \
+            --region=${{ env.GCP_REGION }} \
+            --platform=managed \
+            --allow-unauthenticated \
+            --memory=512Mi \
+            --cpu=1 \
+            --max-instances=10 \
+            --set-env-vars="GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }},BIGQUERY_DATASET=aether_lakehouse"
