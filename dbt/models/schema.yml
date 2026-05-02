@@ -1,0 +1,102 @@
+version: 2
+
+sources:
+  - name: aether
+    description: "AetherFlow Data Lakehouse - Raw ingested data"
+    database: "{{ env_var('GCP_PROJECT_ID', 'your-project-id') }}"
+    schema: aether_lakehouse
+    tables:
+      - name: bronze_raw_data
+        description: "Bronze layer: Raw JSON payloads from market data sources"
+        columns:
+          - name: id
+            description: "Unique message identifier"
+            tests:
+              - unique
+              - not_null
+          - name: raw_payload
+            description: "Raw JSON payload from data source"
+            tests:
+              - not_null
+          - name: ingested_at
+            description: "Timestamp when data was ingested"
+            tests:
+              - not_null
+          - name: sentiment_score
+            description: "AI-generated sentiment score (1-10)"
+
+models:
+  - name: stg_market_data
+    description: "Staging model: Cleaned and typed market data from bronze layer"
+    columns:
+      - name: id
+        description: "Unique record identifier"
+        tests:
+          - unique
+          - not_null
+      - name: symbol
+        description: "Cryptocurrency symbol (e.g., BTC, ETH)"
+        tests:
+          - not_null
+      - name: sentiment_score
+        description: "AI-generated sentiment score"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 10
+              inclusive: true
+      - name: ingested_at
+        description: "Original ingestion timestamp"
+        tests:
+          - not_null
+
+  - name: gold_hourly_sentiment
+    description: "Gold layer: Hourly aggregated sentiment metrics by cryptocurrency"
+    columns:
+      - name: hour_timestamp
+        description: "Hour bucket timestamp"
+        tests:
+          - not_null
+      - name: symbol
+        description: "Cryptocurrency symbol"
+        tests:
+          - not_null
+      - name: avg_sentiment_score
+        description: "Average sentiment score for the hour"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 10
+              inclusive: true
+      - name: sentiment_category
+        description: "Sentiment classification (BULLISH/NEUTRAL/BEARISH)"
+        tests:
+          - accepted_values:
+              values: ['BULLISH', 'NEUTRAL', 'BEARISH']
+      - name: record_count
+        description: "Number of data points in the hour"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 1
+              inclusive: true
+
+  - name: gold_latest_sentiment
+    description: "Gold layer: Latest sentiment for each cryptocurrency"
+    columns:
+      - name: symbol
+        description: "Cryptocurrency symbol"
+        tests:
+          - unique
+          - not_null
+      - name: sentiment_score
+        description: "Current sentiment score"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 10
+              inclusive: true
+      - name: last_updated
+        description: "When the sentiment was last calculated"
+        tests:
+          - not_null
