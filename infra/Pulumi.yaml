@@ -1,0 +1,9 @@
+name: aether-infra
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+description: AetherFlow - Serverless Data Lakehouse on GCP
+config:
+  gcp:project: ${GCP_PROJECT_ID}
+  gcp:region: us-central1
