@@ -1,0 +1,89 @@
+# BigQuery emulator schema (ghcr.io/goccy/bigquery-emulator)
+#
+# Mounted at /data/schema.yaml by docker-compose.yml and loaded with
+# --data-from-yaml. It creates the medallion tables the local stack uses:
+# Bronze for the raw audit trail, Gold for what the serving layer reads.
+#
+# The tables start EMPTY. The local ingest worker (ingest/local_ingest.py)
+# fills them within one cycle of starting, so everything you query locally is
+# data that actually flowed through the pipeline rather than a fixture.
+#
+# The project id below must match GCP_PROJECT_ID (default: local-dev). If you
+# override that in .env, change it here too.
+#
+# In cloud, the Gold tables are built by the dbt models in dbt/models/gold/
+# against real BigQuery; this file only stands in for them locally.
+
+projects:
+  - id: local-dev
+    datasets:
+      # ----------------------------------------------------------------
+      # Bronze - raw enriched events, full audit trail
+      # ----------------------------------------------------------------
+      - id: aether_lakehouse
+        tables:
+          - id: bronze_raw_data
+            columns:
+              - name: id
+                type: STRING
+              - name: raw_payload
+                type: STRING
+              - name: source
+                type: STRING
+              - name: ingested_at
+                type: TIMESTAMP
+              - name: sentiment_score
+                type: FLOAT
+              - name: sentiment_reasoning
+                type: STRING
+              - name: processing_metadata
+                type: STRING
+
+      # ----------------------------------------------------------------
+      # Gold - aggregated metrics served by the API
+      # ----------------------------------------------------------------
+      - id: aether_lakehouse_gold
+        tables:
+          # Read by GET /api/v1/sentiment and GET /api/v1/sentiment/{symbol}
+          - id: gold_latest_sentiment
+            columns:
+              - name: symbol
+                type: STRING
+              - name: sentiment_score
+                type: FLOAT
+              - name: sentiment_category
+                type: STRING
+              - name: sentiment_trend
+                type: STRING
+              - name: price_usd
+                type: FLOAT
+              - name: percent_change_24h
+                type: FLOAT
+              - name: volume_24h
+                type: FLOAT
+              - name: data_points
+                type: INTEGER
+              - name: ai_reasoning
+                type: STRING
+              - name: last_updated
+                type: TIMESTAMP
+
+          # Read by GET /api/v1/sentiment/{symbol}/history
+          - id: gold_hourly_sentiment
+            columns:
+              - name: hour_timestamp
+                type: TIMESTAMP
+              - name: symbol
+                type: STRING
+              - name: avg_sentiment_score
+                type: FLOAT
+              - name: sentiment_category
+                type: STRING
+              - name: avg_price_usd
+                type: FLOAT
+              - name: avg_percent_change_24h
+                type: FLOAT
+              - name: avg_volume_24h
+                type: FLOAT
+              - name: record_count
+                type: INTEGER
