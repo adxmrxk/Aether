@@ -9,9 +9,9 @@ This module demonstrates enterprise-grade observability practices:
 - Integration with Google Cloud Operations (formerly Stackdriver)
 """
 
-from .tracing import init_tracer, get_tracer, trace_function
-from .metrics import init_metrics, record_metric, MetricType
-from .logging import init_logging, get_logger, StructuredLogger
+from .logging import StructuredLogger, get_logger, init_logging
+from .metrics import MetricType, init_metrics, record_metric
+from .tracing import get_tracer, init_tracer, trace_function
 
 __all__ = [
     "init_tracer",

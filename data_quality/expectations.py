@@ -9,16 +9,12 @@ Defines data quality expectations for:
 """
 
 import os
-from typing import Any, Optional
 
-import great_expectations as gx
 from great_expectations.core import ExpectationSuite
 from great_expectations.core.batch import RuntimeBatchRequest
 from great_expectations.data_context import BaseDataContext
 from great_expectations.data_context.types.base import (
     DataContextConfig,
-    DatasourceConfig,
-    FilesystemStoreBackendDefaults,
 )
 
 
@@ -34,7 +30,7 @@ class AetherDataContext:
 
     def __init__(
         self,
-        project_id: Optional[str] = None,
+        project_id: str | None = None,
         dataset_id: str = "aether_lakehouse",
         root_directory: str = "/tmp/great_expectations",
     ):
@@ -287,7 +283,7 @@ def validate_bronze_data(context: AetherDataContext, table_name: str = "bronze_r
     # Get or create suite
     try:
         suite = gx_context.get_expectation_suite("bronze_raw_data_suite")
-    except:
+    except Exception:
         suite = create_bronze_expectations()
         gx_context.save_expectation_suite(suite)
 
@@ -321,7 +317,7 @@ def validate_sentiment_scores(context: AetherDataContext) -> dict:
 
     try:
         suite = gx_context.get_expectation_suite("sentiment_validation_suite")
-    except:
+    except Exception:
         suite = create_sentiment_expectations()
         gx_context.save_expectation_suite(suite)
 
@@ -354,7 +350,7 @@ def validate_market_data(context: AetherDataContext) -> dict:
 
     try:
         suite = gx_context.get_expectation_suite("market_data_suite")
-    except:
+    except Exception:
         suite = create_market_data_expectations()
         gx_context.save_expectation_suite(suite)
 

@@ -1,8 +1,22 @@
-fastapi>=0.110.0
-uvicorn[standard]>=0.27.0
-google-cloud-bigquery>=3.20.0
-google-cloud-aiplatform>=1.50.0
-vertexai>=1.50.0
-pinecone-client>=3.0.0
-pydantic>=2.6.0
-python-multipart>=0.0.9
+# Upper bounds are required: with open-ended ranges pip's resolver walks too
+# large a graph and fails with "resolution-too-deep" when building the image.
+fastapi>=0.110.0,<1.0.0
+uvicorn[standard]>=0.27.0,<1.0.0
+google-cloud-bigquery>=3.20.0,<4.0.0
+# Provides the `vertexai` module. Do not also depend on the standalone
+# `vertexai` distribution - the two conflict.
+google-cloud-aiplatform>=1.50.0,<2.0.0
+# Used by streaming/websocket_server.py for the Pub/Sub bridge.
+google-cloud-pubsub>=2.20.0,<3.0.0
+# `pinecone-client` is the retired name for this package.
+pinecone>=5.0.0,<8.0.0
+pydantic>=2.6.0,<3.0.0
+python-multipart>=0.0.9,<0.1.0
+# GraphQL serving layer (api/graphql_api/schema.py)
+strawberry-graphql[fastapi]>=0.220.0,<1.0.0
+# Redis caching + pub/sub fan-out to WebSocket clients (api/cache/redis_cache.py)
+redis>=5.0.0,<7.0.0
+# WebSocket transport for uvicorn
+websockets>=12.0,<16.0
+# Prometheus scrape endpoint at /metrics (observability/prometheus.yml).
+prometheus-client>=0.20.0,<1.0.0

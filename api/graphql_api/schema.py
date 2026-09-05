@@ -10,13 +10,14 @@ Alternative to REST API using Strawberry GraphQL:
 This demonstrates API versatility - supporting both REST and GraphQL.
 """
 
+import asyncio
+import json
+from collections.abc import AsyncGenerator
 from datetime import datetime
-from typing import List, Optional
+
 import strawberry
-from strawberry.types import Info
-
 from google.cloud import bigquery
-
+from strawberry.types import Info
 
 # ============================================================================
 # GraphQL Types
@@ -28,12 +29,12 @@ class Sentiment:
     symbol: str
     sentiment_score: float
     sentiment_category: str
-    sentiment_trend: Optional[str]
-    price_usd: Optional[float]
-    percent_change_24h: Optional[float]
-    volume_24h: Optional[float]
+    sentiment_trend: str | None
+    price_usd: float | None
+    percent_change_24h: float | None
+    volume_24h: float | None
     data_points: int
-    ai_reasoning: Optional[str]
+    ai_reasoning: str | None
     last_updated: datetime
 
 
@@ -44,7 +45,7 @@ class HourlySentiment:
     symbol: str
     avg_sentiment_score: float
     sentiment_category: str
-    avg_price_usd: Optional[float]
+    avg_price_usd: float | None
     record_count: int
 
 
@@ -57,8 +58,8 @@ class MarketSummary:
     neutral_count: int
     bearish_count: int
     last_updated: datetime
-    top_bullish: List[Sentiment]
-    top_bearish: List[Sentiment]
+    top_bullish: list[Sentiment]
+    top_bearish: list[Sentiment]
 
 
 @strawberry.type
@@ -69,8 +70,8 @@ class SearchResult:
     symbol: str
     sentiment_score: float
     sentiment_category: str
-    news_headline: Optional[str]
-    reasoning: Optional[str]
+    news_headline: str | None
+    reasoning: str | None
     timestamp: str
 
 
@@ -79,7 +80,7 @@ class SearchResponse:
     """Search response with results."""
     query: str
     total_results: int
-    results: List[SearchResult]
+    results: list[SearchResult]
 
 
 @strawberry.input
@@ -87,8 +88,65 @@ class SearchInput:
     """Input for semantic search."""
     query: str
     top_k: int = 10
-    symbol_filter: Optional[str] = None
-    sentiment_filter: Optional[str] = None
+    symbol_filter: str | None = None
+    sentiment_filter: str | None = None
+
+
+# ============================================================================
+# Resolver helpers
+#
+# Shared by the resolvers below. Strawberry passes the root value as `self`
+# (None for a root query), so resolvers cannot call each other as methods -
+# the shared work lives here instead.
+# ============================================================================
+
+def _fetch_sentiments(
+    info: Info,
+    limit: int = 50,
+    category: str | None = None,
+) -> list[Sentiment]:
+    """Read the Gold latest-sentiment table."""
+    bq_client = info.context.get("bq_client")
+    project_id = info.context.get("project_id")
+
+    if bq_client is None:
+        return []
+
+    # The filter is composed rather than written as
+    # `WHERE (@category IS NULL OR sentiment_category = @category)`: passing a
+    # NULL STRING parameter into that expression hangs the BigQuery emulator
+    # indefinitely. Only bind the parameter when there is a value for it.
+    params = [bigquery.ScalarQueryParameter("limit", "INT64", limit)]
+    where = ""
+    if category:
+        where = "WHERE sentiment_category = @category"
+        params.append(bigquery.ScalarQueryParameter("category", "STRING", category))
+
+    query = f"""
+        SELECT *
+        FROM `{project_id}.aether_lakehouse_gold.gold_latest_sentiment`
+        {where}
+        ORDER BY sentiment_score DESC
+        LIMIT @limit
+    """
+
+    job_config = bigquery.QueryJobConfig(query_parameters=params)
+
+    return [
+        Sentiment(
+            symbol=row.symbol,
+            sentiment_score=row.sentiment_score,
+            sentiment_category=row.sentiment_category,
+            sentiment_trend=row.sentiment_trend,
+            price_usd=row.price_usd,
+            percent_change_24h=row.percent_change_24h,
+            volume_24h=row.volume_24h,
+            data_points=row.data_points,
+            ai_reasoning=row.ai_reasoning,
+            last_updated=row.last_updated,
+        )
+        for row in bq_client.query(query, job_config=job_config).result(timeout=20)
+    ]
 
 
 # ============================================================================
@@ -100,7 +158,7 @@ class Query:
     """Root query type for AetherFlow GraphQL API."""
 
     @strawberry.field
-    async def sentiment(self, symbol: str, info: Info) -> Optional[Sentiment]:
+    async def sentiment(self, symbol: str, info: Info) -> Sentiment | None:
         """
         Get current sentiment for a specific cryptocurrency.
 
@@ -130,7 +188,9 @@ class Query:
             ]
         )
 
-        results = list(bq_client.query(query, job_config=job_config).result())
+        results = await asyncio.to_thread(
+            lambda: list(bq_client.query(query, job_config=job_config).result(timeout=20))
+        )
 
         if not results:
             return None
@@ -154,8 +214,8 @@ class Query:
         self,
         info: Info,
         limit: int = 50,
-        category: Optional[str] = None,
-    ) -> List[Sentiment]:
+        category: str | None = None,
+    ) -> list[Sentiment]:
         """
         Get sentiment data for multiple cryptocurrencies.
 
@@ -168,41 +228,7 @@ class Query:
                 }
             }
         """
-        bq_client = info.context.get("bq_client")
-        project_id = info.context.get("project_id")
-
-        query = f"""
-            SELECT *
-            FROM `{project_id}.aether_lakehouse_gold.gold_latest_sentiment`
-            WHERE (@category IS NULL OR sentiment_category = @category)
-            ORDER BY sentiment_score DESC
-            LIMIT @limit
-        """
-
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("limit", "INT64", limit),
-                bigquery.ScalarQueryParameter("category", "STRING", category),
-            ]
-        )
-
-        results = list(bq_client.query(query, job_config=job_config).result())
-
-        return [
-            Sentiment(
-                symbol=row.symbol,
-                sentiment_score=row.sentiment_score,
-                sentiment_category=row.sentiment_category,
-                sentiment_trend=row.sentiment_trend,
-                price_usd=row.price_usd,
-                percent_change_24h=row.percent_change_24h,
-                volume_24h=row.volume_24h,
-                data_points=row.data_points,
-                ai_reasoning=row.ai_reasoning,
-                last_updated=row.last_updated,
-            )
-            for row in results
-        ]
+        return await asyncio.to_thread(_fetch_sentiments, info, limit, category)
 
     @strawberry.field
     async def market_summary(self, info: Info) -> MarketSummary:
@@ -220,7 +246,7 @@ class Query:
                 }
             }
         """
-        all_sentiments = await self.sentiments(info, limit=100)
+        all_sentiments = await asyncio.to_thread(_fetch_sentiments, info, 100)
 
         if not all_sentiments:
             return MarketSummary(
@@ -254,9 +280,9 @@ class Query:
     async def sentiment_history(
         self,
         symbol: str,
+        info: Info,
         hours: int = 24,
-        info: Info = None,
-    ) -> List[HourlySentiment]:
+    ) -> list[HourlySentiment]:
         """
         Get hourly sentiment history for a symbol.
 
@@ -293,7 +319,9 @@ class Query:
             ]
         )
 
-        results = list(bq_client.query(query, job_config=job_config).result())
+        results = await asyncio.to_thread(
+            lambda: list(bq_client.query(query, job_config=job_config).result(timeout=20))
+        )
 
         return [
             HourlySentiment(
@@ -389,10 +417,15 @@ class Subscription:
     @strawberry.subscription
     async def sentiment_updates(
         self,
-        symbols: Optional[List[str]] = None,
-    ) -> Sentiment:
+        info: Info,
+        symbols: list[str] | None = None,
+    ) -> AsyncGenerator[Sentiment, None]:
         """
         Subscribe to real-time sentiment updates.
+
+        Records are read off the Redis channel the ingest worker publishes to,
+        the same source that feeds the WebSocket endpoint, so a subscriber sees
+        exactly what landed in the pipeline.
 
         Example:
             subscription {
@@ -403,23 +436,48 @@ class Subscription:
                 }
             }
         """
-        import asyncio
-        # This would integrate with the WebSocket/Pub/Sub system
-        # Placeholder for demonstration
-        while True:
-            await asyncio.sleep(5)
-            yield Sentiment(
-                symbol="BTC",
-                sentiment_score=7.5,
-                sentiment_category="BULLISH",
-                sentiment_trend="IMPROVING",
-                price_usd=67500.0,
-                percent_change_24h=2.5,
-                volume_24h=28000000000,
-                data_points=100,
-                ai_reasoning="Strong momentum",
-                last_updated=datetime.utcnow(),
-            )
+        cache = info.context.get("cache")
+        channel = info.context.get("stream_channel", "aether:stream")
+
+        if cache is None:
+            # Without Redis there is no stream to follow; end rather than
+            # inventing values.
+            return
+
+        wanted = {s.upper() for s in symbols} if symbols else None
+
+        pubsub = cache.client.pubsub()
+        await pubsub.subscribe(channel)
+        try:
+            async for message in pubsub.listen():
+                if message.get("type") != "message":
+                    continue
+                try:
+                    payload = json.loads(message["data"])
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+                symbol = (payload.get("symbol") or "").upper()
+                if wanted and symbol not in wanted:
+                    continue
+
+                yield Sentiment(
+                    symbol=symbol,
+                    sentiment_score=payload.get("sentiment_score", 5.0),
+                    sentiment_category=payload.get("sentiment_category", "NEUTRAL"),
+                    sentiment_trend=None,
+                    price_usd=payload.get("price_usd"),
+                    percent_change_24h=payload.get("percent_change_24h"),
+                    volume_24h=payload.get("volume_24h"),
+                    data_points=1,
+                    ai_reasoning=payload.get("sentiment_reasoning"),
+                    last_updated=datetime.fromisoformat(
+                        payload["timestamp"]
+                    ) if payload.get("timestamp") else datetime.utcnow(),
+                )
+        finally:
+            await pubsub.unsubscribe(channel)
+            await pubsub.aclose()
 
 
 # ============================================================================

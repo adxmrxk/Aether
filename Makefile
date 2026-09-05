@@ -33,13 +33,14 @@ help:
 
 install:
 	pip install -r api/requirements.txt
+	pip install -r ingest/requirements.txt
 	pip install -r functions/market_processor/requirements.txt
 	pip install -r tests/requirements.txt
 	pip install -r observability/requirements.txt
 	cd dbt && pip install dbt-core dbt-bigquery && dbt deps
 
 dev: docker-up
-	cd api && uvicorn main:app --reload --host 0.0.0.0 --port 8080
+	uvicorn api.main:app --reload --host 0.0.0.0 --port 8080
 
 # ============================================================================
 # Testing
@@ -96,16 +97,16 @@ tf-destroy:
 # ============================================================================
 
 docker-up:
-	docker-compose up -d
+	docker compose up -d
 
 docker-down:
-	docker-compose down
+	docker compose down
 
 docker-logs:
-	docker-compose logs -f
+	docker compose logs -f
 
 docker-build:
-	docker-compose build --no-cache
+	docker compose build --no-cache
 
 # ============================================================================
 # dbt
@@ -138,8 +139,9 @@ deploy-function:
 		--memory=512MB \
 		--timeout=300s
 
+# Deployed from the repo root: the image needs api/ and streaming/ both.
 deploy-api:
-	cd api && gcloud run deploy aether-api \
+	gcloud run deploy aether-api \
 		--source=. \
 		--region=us-central1 \
 		--allow-unauthenticated

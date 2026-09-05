@@ -1,6 +1,12 @@
-functions-framework>=3.5.0
-google-cloud-bigquery>=3.20.0
-google-cloud-aiplatform>=1.50.0
-vertexai>=1.50.0
-cloudevents>=1.10.0
-pinecone-client>=3.0.0
+# Upper bounds are required: with open-ended ranges pip's resolver walks too
+# large a graph and fails with "resolution-too-deep".
+functions-framework>=3.5.0,<4.0.0
+google-cloud-bigquery>=3.20.0,<4.0.0
+# Provides the `vertexai` module. Do not also depend on the standalone
+# `vertexai` distribution - the two conflict.
+google-cloud-aiplatform>=1.50.0,<2.0.0
+cloudevents>=1.10.0,<2.0.0
+# `pinecone-client` is the retired name for this package.
+pinecone>=5.0.0,<8.0.0
+# Live fan-out to WebSocket/GraphQL subscribers via the API's Redis channel.
+redis>=5.0.0,<7.0.0

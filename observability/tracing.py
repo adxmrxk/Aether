@@ -13,7 +13,8 @@ Exports traces to Google Cloud Trace for visualization and analysis.
 
 import functools
 import os
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from opentelemetry import trace
 from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
@@ -23,10 +24,10 @@ from opentelemetry.propagators.cloud_trace_propagator import CloudTraceFormatPro
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor
-from opentelemetry.trace import Status, StatusCode, Span
+from opentelemetry.trace import Span, Status, StatusCode
 
 # Global tracer instance
-_tracer: Optional[trace.Tracer] = None
+_tracer: trace.Tracer | None = None
 
 
 def init_tracer(
@@ -97,8 +98,8 @@ def get_tracer() -> trace.Tracer:
 
 
 def trace_function(
-    span_name: Optional[str] = None,
-    attributes: Optional[dict[str, Any]] = None,
+    span_name: str | None = None,
+    attributes: dict[str, Any] | None = None,
     record_exception: bool = True,
 ):
     """
@@ -153,7 +154,7 @@ def add_span_attributes(attributes: dict[str, Any]) -> None:
             span.set_attribute(key, value)
 
 
-def add_span_event(name: str, attributes: Optional[dict[str, Any]] = None) -> None:
+def add_span_event(name: str, attributes: dict[str, Any] | None = None) -> None:
     """Add an event to the current span."""
     span = trace.get_current_span()
     if span:
@@ -166,11 +167,11 @@ class SpanContext:
     def __init__(
         self,
         name: str,
-        attributes: Optional[dict[str, Any]] = None,
+        attributes: dict[str, Any] | None = None,
     ):
         self.name = name
         self.attributes = attributes or {}
-        self.span: Optional[Span] = None
+        self.span: Span | None = None
 
     def __enter__(self) -> Span:
         tracer = get_tracer()

@@ -12,10 +12,9 @@ Why Pulumi over Terraform?
 import pulumi
 from pulumi_gcp import (
     bigquery,
+    projects,
     pubsub,
     serviceaccount,
-    projects,
-    cloudfunctionsv2,
     storage,
 )
 
