@@ -1,0 +1,13 @@
+# Dashboard provider: loads every dashboard JSON in this directory on startup.
+apiVersion: 1
+
+providers:
+  - name: Aether
+    orgId: 1
+    folder: Aether
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

@@ -12,6 +12,5 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  - job_name: 'redis'
-    static_configs:
-      - targets: ['redis:6379']
+  # Redis exposes no Prometheus endpoint; scraping :6379 only creates a
+  # permanently down target. Add oliver006/redis_exporter to collect these.
