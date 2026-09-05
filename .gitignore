@@ -32,9 +32,13 @@ dbt/logs/
 .DS_Store
 Thumbs.db
 
+# Local tooling
+.claude/
+
 # Secrets - NEVER commit these
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 credentials.json
