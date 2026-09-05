@@ -14,13 +14,12 @@ Features:
 - Caching for performance
 """
 
-import os
 import logging
+import os
 from functools import lru_cache
-from typing import Optional
 
-from google.cloud import secretmanager
 from google.api_core import exceptions
+from google.cloud import secretmanager
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +35,9 @@ class SecretManagerClient:
     Provides secure access to secrets with caching and fallback support.
     """
 
-    def __init__(self, project_id: Optional[str] = None):
+    def __init__(self, project_id: str | None = None):
         self.project_id = project_id or PROJECT_ID
-        self._client: Optional[secretmanager.SecretManagerServiceClient] = None
+        self._client: secretmanager.SecretManagerServiceClient | None = None
 
     @property
     def client(self) -> secretmanager.SecretManagerServiceClient:
@@ -51,8 +50,8 @@ class SecretManagerClient:
         self,
         secret_id: str,
         version: str = "latest",
-        fallback_env_var: Optional[str] = None,
-    ) -> Optional[str]:
+        fallback_env_var: str | None = None,
+    ) -> str | None:
         """
         Retrieve a secret value.
 
@@ -125,7 +124,7 @@ class SecretManagerClient:
             logger.error(f"Error creating secret {secret_id}: {e}")
             return False
 
-    def add_secret_version(self, secret_id: str, secret_value: str) -> Optional[str]:
+    def add_secret_version(self, secret_id: str, secret_value: str) -> str | None:
         """
         Add a new version to an existing secret.
 
@@ -165,7 +164,7 @@ class SecretManagerClient:
 
 # Cached secret accessor
 @lru_cache(maxsize=32)
-def get_secret(secret_id: str, fallback_env_var: Optional[str] = None) -> Optional[str]:
+def get_secret(secret_id: str, fallback_env_var: str | None = None) -> str | None:
     """
     Get a secret value with caching.
 
@@ -181,21 +180,21 @@ def get_secret(secret_id: str, fallback_env_var: Optional[str] = None) -> Option
 
 
 # Pre-defined secret accessors for common secrets
-def get_pinecone_api_key() -> Optional[str]:
+def get_pinecone_api_key() -> str | None:
     """Get Pinecone API key."""
     return get_secret("pinecone-api-key", fallback_env_var="PINECONE_API_KEY")
 
 
-def get_redis_password() -> Optional[str]:
+def get_redis_password() -> str | None:
     """Get Redis password."""
     return get_secret("redis-password", fallback_env_var="REDIS_PASSWORD")
 
 
-def get_database_url() -> Optional[str]:
+def get_database_url() -> str | None:
     """Get database connection URL."""
     return get_secret("database-url", fallback_env_var="DATABASE_URL")
 
 
-def get_api_key(service_name: str) -> Optional[str]:
+def get_api_key(service_name: str) -> str | None:
     """Get API key for a specific service."""
     return get_secret(f"{service_name}-api-key", fallback_env_var=f"{service_name.upper()}_API_KEY")

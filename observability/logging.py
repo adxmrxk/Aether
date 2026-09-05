@@ -17,14 +17,14 @@ import os
 import sys
 import traceback
 from contextvars import ContextVar
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 from opentelemetry import trace
 
 # Context variable for correlation ID
-_correlation_id: ContextVar[Optional[str]] = ContextVar("correlation_id", default=None)
+_correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=None)
 
 
 class StructuredFormatter(logging.Formatter):
@@ -58,7 +58,7 @@ class StructuredFormatter(logging.Formatter):
         """Format log record as JSON."""
         # Base log entry
         log_entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "severity": self.SEVERITY_MAP.get(record.levelno, "DEFAULT"),
             "message": record.getMessage(),
             "logger": record.name,
@@ -203,7 +203,7 @@ def get_logger(name: str) -> StructuredLogger:
     return StructuredLogger(name)
 
 
-def set_correlation_id(correlation_id: Optional[str] = None) -> str:
+def set_correlation_id(correlation_id: str | None = None) -> str:
     """
     Set correlation ID for the current context.
 
@@ -218,7 +218,7 @@ def set_correlation_id(correlation_id: Optional[str] = None) -> str:
     return cid
 
 
-def get_correlation_id() -> Optional[str]:
+def get_correlation_id() -> str | None:
     """Get the current correlation ID."""
     return _correlation_id.get()
 

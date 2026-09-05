@@ -16,16 +16,15 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 
 import functions_framework
+import vertexai
 from cloudevents.http import CloudEvent
 from google.cloud import bigquery
-import vertexai
-from vertexai.generative_models import GenerativeModel, GenerationConfig
-from vertexai.language_models import TextEmbeddingModel
 from pinecone import Pinecone, ServerlessSpec
+from vertexai.generative_models import GenerationConfig, GenerativeModel
+from vertexai.language_models import TextEmbeddingModel
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -361,7 +360,7 @@ def upsert_to_pinecone(
             "percent_change_24h": payload.get("percent_change_24h", 0),
             "news_headline": payload.get("news_headline", "")[:200],
             "reasoning": (reasoning or "")[:500],
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         # Upsert to Pinecone
@@ -433,7 +432,7 @@ def _broadcast(payload: dict, score: float, reasoning: str) -> None:
             "sentiment_reasoning": reasoning,
             "price_usd": payload.get("price_usd"),
             "percent_change_24h": payload.get("percent_change_24h"),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }))
     except Exception as e:
         logger.warning(f"Live broadcast failed: {e}")
@@ -523,7 +522,7 @@ def process_market_data(cloud_event: CloudEvent) -> None:
             "id": message_id,
             "raw_payload": json.dumps(payload),
             "source": source,
-            "ingested_at": datetime.now(timezone.utc).isoformat(),
+            "ingested_at": datetime.now(UTC).isoformat(),
             "sentiment_score": sentiment_score,
             "sentiment_reasoning": sentiment_reasoning,
             "processing_metadata": json.dumps({
@@ -535,7 +534,7 @@ def process_market_data(cloud_event: CloudEvent) -> None:
                     "text-embedding-005" if embedding_model is not None else None
                 ),
                 "pinecone_indexed": pinecone_success,
-                "processed_at": datetime.now(timezone.utc).isoformat(),
+                "processed_at": datetime.now(UTC).isoformat(),
                 "pubsub_publish_time": pubsub_message.get("publishTime"),
             }),
         }

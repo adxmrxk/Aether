@@ -13,10 +13,10 @@ Integrates with Pub/Sub for event sourcing.
 import asyncio
 import json
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional, Set
+from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 from google.cloud import pubsub_v1
@@ -37,7 +37,7 @@ class EventType(Enum):
 class StreamEvent:
     """Real-time event structure."""
     event_type: EventType
-    symbol: Optional[str]
+    symbol: str | None
     data: dict[str, Any]
     timestamp: str
 
@@ -101,10 +101,10 @@ class ConnectionManager:
 
     def __init__(self):
         # All active connections
-        self.active_connections: Set[WebSocket] = set()
+        self.active_connections: set[WebSocket] = set()
 
         # Symbol-specific subscriptions
-        self.symbol_subscriptions: dict[str, Set[WebSocket]] = {}
+        self.symbol_subscriptions: dict[str, set[WebSocket]] = {}
 
         # Connection metadata
         self.connection_metadata: dict[WebSocket, dict] = {}
@@ -112,8 +112,8 @@ class ConnectionManager:
     async def connect(
         self,
         websocket: WebSocket,
-        client_id: Optional[str] = None,
-        symbols: Optional[list[str]] = None,
+        client_id: str | None = None,
+        symbols: list[str] | None = None,
     ) -> None:
         """
         Accept a new WebSocket connection.
@@ -273,7 +273,6 @@ class PubSubEventHandler:
                 # Create appropriate event
                 symbol = data.get("symbol", "UNKNOWN")
                 sentiment_score = data.get("sentiment_score")
-                price = data.get("price_usd")
 
                 if sentiment_score:
                     event = StreamEvent.sentiment_update(
@@ -311,7 +310,7 @@ class PubSubEventHandler:
 # FastAPI WebSocket endpoint handler
 async def websocket_endpoint(
     websocket: WebSocket,
-    symbols: Optional[str] = None,
+    symbols: str | None = None,
 ) -> None:
     """
     WebSocket endpoint for real-time market data.

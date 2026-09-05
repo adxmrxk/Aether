@@ -52,6 +52,10 @@ filterwarnings = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+
+# These live under [tool.ruff.lint] as of ruff 0.2; the top-level spellings are
+# deprecated and warn on every run.
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -66,8 +70,8 @@ ignore = [
     "B008",  # do not perform function calls in argument defaults
 ]
 
-[tool.ruff.isort]
-known-first-party = ["api", "functions", "observability", "data_quality"]
+[tool.ruff.lint.isort]
+known-first-party = ["api", "functions", "ingest", "kafka", "observability", "data_quality", "streaming"]
 
 [tool.mypy]
 python_version = "3.12"

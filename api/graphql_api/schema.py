@@ -12,13 +12,12 @@ This demonstrates API versatility - supporting both REST and GraphQL.
 
 import asyncio
 import json
+from collections.abc import AsyncGenerator
 from datetime import datetime
-from typing import AsyncGenerator, List, Optional
+
 import strawberry
-from strawberry.types import Info
-
 from google.cloud import bigquery
-
+from strawberry.types import Info
 
 # ============================================================================
 # GraphQL Types
@@ -30,12 +29,12 @@ class Sentiment:
     symbol: str
     sentiment_score: float
     sentiment_category: str
-    sentiment_trend: Optional[str]
-    price_usd: Optional[float]
-    percent_change_24h: Optional[float]
-    volume_24h: Optional[float]
+    sentiment_trend: str | None
+    price_usd: float | None
+    percent_change_24h: float | None
+    volume_24h: float | None
     data_points: int
-    ai_reasoning: Optional[str]
+    ai_reasoning: str | None
     last_updated: datetime
 
 
@@ -46,7 +45,7 @@ class HourlySentiment:
     symbol: str
     avg_sentiment_score: float
     sentiment_category: str
-    avg_price_usd: Optional[float]
+    avg_price_usd: float | None
     record_count: int
 
 
@@ -59,8 +58,8 @@ class MarketSummary:
     neutral_count: int
     bearish_count: int
     last_updated: datetime
-    top_bullish: List[Sentiment]
-    top_bearish: List[Sentiment]
+    top_bullish: list[Sentiment]
+    top_bearish: list[Sentiment]
 
 
 @strawberry.type
@@ -71,8 +70,8 @@ class SearchResult:
     symbol: str
     sentiment_score: float
     sentiment_category: str
-    news_headline: Optional[str]
-    reasoning: Optional[str]
+    news_headline: str | None
+    reasoning: str | None
     timestamp: str
 
 
@@ -81,7 +80,7 @@ class SearchResponse:
     """Search response with results."""
     query: str
     total_results: int
-    results: List[SearchResult]
+    results: list[SearchResult]
 
 
 @strawberry.input
@@ -89,8 +88,8 @@ class SearchInput:
     """Input for semantic search."""
     query: str
     top_k: int = 10
-    symbol_filter: Optional[str] = None
-    sentiment_filter: Optional[str] = None
+    symbol_filter: str | None = None
+    sentiment_filter: str | None = None
 
 
 # ============================================================================
@@ -104,8 +103,8 @@ class SearchInput:
 def _fetch_sentiments(
     info: Info,
     limit: int = 50,
-    category: Optional[str] = None,
-) -> List[Sentiment]:
+    category: str | None = None,
+) -> list[Sentiment]:
     """Read the Gold latest-sentiment table."""
     bq_client = info.context.get("bq_client")
     project_id = info.context.get("project_id")
@@ -159,7 +158,7 @@ class Query:
     """Root query type for AetherFlow GraphQL API."""
 
     @strawberry.field
-    async def sentiment(self, symbol: str, info: Info) -> Optional[Sentiment]:
+    async def sentiment(self, symbol: str, info: Info) -> Sentiment | None:
         """
         Get current sentiment for a specific cryptocurrency.
 
@@ -215,8 +214,8 @@ class Query:
         self,
         info: Info,
         limit: int = 50,
-        category: Optional[str] = None,
-    ) -> List[Sentiment]:
+        category: str | None = None,
+    ) -> list[Sentiment]:
         """
         Get sentiment data for multiple cryptocurrencies.
 
@@ -283,7 +282,7 @@ class Query:
         symbol: str,
         info: Info,
         hours: int = 24,
-    ) -> List[HourlySentiment]:
+    ) -> list[HourlySentiment]:
         """
         Get hourly sentiment history for a symbol.
 
@@ -419,7 +418,7 @@ class Subscription:
     async def sentiment_updates(
         self,
         info: Info,
-        symbols: Optional[List[str]] = None,
+        symbols: list[str] | None = None,
     ) -> AsyncGenerator[Sentiment, None]:
         """
         Subscribe to real-time sentiment updates.

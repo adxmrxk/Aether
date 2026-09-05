@@ -14,16 +14,16 @@ import json
 import logging
 import os
 import signal
-import sys
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from confluent_kafka import Consumer, KafkaError, KafkaException, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroDeserializer, AvroSerializer
-from confluent_kafka.serialization import SerializationContext, MessageField
+from confluent_kafka.serialization import MessageField, SerializationContext
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class MarketDataMessage:
     volume_24h: float
     market_cap: float
     percent_change_24h: float
-    news_headline: Optional[str]
+    news_headline: str | None
     source: str
     timestamp: str
 
@@ -78,7 +78,7 @@ class MarketDataMessage:
             percent_change_24h=data.get("percent_change_24h", 0),
             news_headline=data.get("news_headline"),
             source=data.get("source", "unknown"),
-            timestamp=data.get("timestamp", datetime.now(timezone.utc).isoformat()),
+            timestamp=data.get("timestamp", datetime.now(UTC).isoformat()),
         )
 
 
@@ -186,7 +186,7 @@ class AetherKafkaConsumer:
             dlq_message = {
                 "original_message": message,
                 "error": error,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "topic": self.topics[0] if self.topics else "unknown",
             }
 
@@ -201,7 +201,7 @@ class AetherKafkaConsumer:
         except Exception as e:
             logger.error(f"Failed to send message to DLQ: {e}")
 
-    def _deserialize_message(self, msg) -> Optional[dict[str, Any]]:
+    def _deserialize_message(self, msg) -> dict[str, Any] | None:
         """Deserialize message based on configuration."""
         try:
             if self.deserializer:
@@ -312,7 +312,7 @@ class AetherKafkaProducer:
         self,
         topic: str,
         value: dict[str, Any],
-        key: Optional[str] = None,
+        key: str | None = None,
     ) -> None:
         """
         Produce a message to Kafka topic.

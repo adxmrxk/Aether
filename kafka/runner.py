@@ -17,7 +17,7 @@ import logging
 import os
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import requests
@@ -53,7 +53,7 @@ def forward_to_function(payload: dict[str, Any]) -> bool:
         "type": "google.cloud.pubsub.topic.v1.messagePublished",
         "source": f"//kafka/{MARKET_DATA_TOPIC}",
         "id": str(uuid.uuid4()),
-        "time": datetime.now(timezone.utc).isoformat(),
+        "time": datetime.now(UTC).isoformat(),
         "datacontenttype": "application/json",
         "data": {
             "message": {
@@ -62,7 +62,7 @@ def forward_to_function(payload: dict[str, Any]) -> bool:
                 ).decode("utf-8"),
                 "attributes": {"source": payload.get("source", "kafka")},
                 "messageId": str(uuid.uuid4()),
-                "publishTime": datetime.now(timezone.utc).isoformat(),
+                "publishTime": datetime.now(UTC).isoformat(),
             },
         },
     }

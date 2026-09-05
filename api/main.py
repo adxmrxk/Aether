@@ -12,24 +12,22 @@ Features:
 
 import asyncio
 import json
-import os
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, Body, Request, Response, WebSocket
+import vertexai
+from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
 from google.api_core.client_options import ClientOptions
 from google.auth.credentials import AnonymousCredentials
 from google.cloud import bigquery
-import vertexai
-from vertexai.language_models import TextEmbeddingModel
 from pinecone import Pinecone
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
@@ -38,15 +36,19 @@ from prometheus_client import (
     Histogram,
     generate_latest,
 )
+from pydantic import BaseModel, Field
 from strawberry.fastapi import GraphQLRouter
+from vertexai.language_models import TextEmbeddingModel
 
-from api.cache.redis_cache import AsyncRedisCache, CacheKeyBuilder, SENTIMENT_TTL
+from api.cache.redis_cache import SENTIMENT_TTL, AsyncRedisCache, CacheKeyBuilder
 from api.graphql_api.schema import schema as graphql_schema
 from streaming.websocket_server import (
     StreamEvent,
     heartbeat_task,
-    manager as ws_manager,
     websocket_endpoint,
+)
+from streaming.websocket_server import (
+    manager as ws_manager,
 )
 
 # Configure logging
@@ -113,7 +115,7 @@ async def run_query(
             return await asyncio.wait_for(
                 asyncio.to_thread(_execute), timeout=timeout + 5
             )
-        except (asyncio.TimeoutError, TimeoutError) as e:
+        except TimeoutError as e:
             last_error = e
             if attempt < attempts - 1:
                 await asyncio.sleep(0.75 * (attempt + 1))
@@ -656,7 +658,9 @@ async def semantic_search(request: SearchRequest):
         raise
     except Exception as e:
         logger.error(f"Semantic search failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Search failed: {str(e)}"
+        ) from e
 
 
 # Get similar news/data to a specific record
@@ -720,7 +724,9 @@ async def find_similar(
         raise
     except Exception as e:
         logger.error(f"Find similar failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Search failed: {str(e)}"
+        ) from e
 
 
 # Get latest sentiment for all symbols
@@ -817,7 +823,7 @@ async def get_market_sentiment(
         raise HTTPException(
             status_code=500,
             detail=f"Database query failed: {e or type(e).__name__}",
-        )
+        ) from e
 
 
 # Get sentiment for specific symbol
@@ -896,7 +902,7 @@ async def get_symbol_sentiment(symbol: str):
         raise HTTPException(
             status_code=500,
             detail=f"Database query failed: {e or type(e).__name__}",
-        )
+        ) from e
 
 
 # Get historical sentiment (hourly)
@@ -972,7 +978,7 @@ async def get_symbol_history(
         raise HTTPException(
             status_code=500,
             detail=f"Database query failed: {e or type(e).__name__}",
-        )
+        ) from e
 
 
 # Root endpoint

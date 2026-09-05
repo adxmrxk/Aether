@@ -14,9 +14,10 @@ Exports metrics to Google Cloud Monitoring for dashboards and alerting.
 
 import os
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
 from enum import Enum
-from typing import Any, Generator, Optional
+from typing import Any
 
 from opentelemetry import metrics
 from opentelemetry.exporter.cloud_monitoring import CloudMonitoringMetricsExporter
@@ -25,7 +26,7 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 
 # Global meter instance
-_meter: Optional[metrics.Meter] = None
+_meter: metrics.Meter | None = None
 
 # Metric instruments cache
 _instruments: dict[str, Any] = {}
@@ -181,7 +182,7 @@ def get_meter() -> metrics.Meter:
 def record_metric(
     name: str,
     value: float,
-    attributes: Optional[dict[str, str]] = None,
+    attributes: dict[str, str] | None = None,
     metric_type: MetricType = MetricType.COUNTER,
 ) -> None:
     """
@@ -209,7 +210,7 @@ def record_metric(
 @contextmanager
 def measure_latency(
     metric_name: str,
-    attributes: Optional[dict[str, str]] = None,
+    attributes: dict[str, str] | None = None,
 ) -> Generator[None, None, None]:
     """
     Context manager to measure operation latency.
@@ -229,7 +230,7 @@ def measure_latency(
 def increment_counter(
     name: str,
     value: int = 1,
-    attributes: Optional[dict[str, str]] = None,
+    attributes: dict[str, str] | None = None,
 ) -> None:
     """Convenience function to increment a counter."""
     record_metric(name, value, attributes, MetricType.COUNTER)

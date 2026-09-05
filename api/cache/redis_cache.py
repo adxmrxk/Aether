@@ -13,9 +13,10 @@ Supports both Redis (Cloud Memorystore) and local fallback.
 import hashlib
 import json
 import os
+from collections.abc import Callable
 from datetime import timedelta
 from functools import wraps
-from typing import Any, Callable, Optional, TypeVar, Union
+from typing import Any, TypeVar
 
 import redis
 from redis.asyncio import Redis as AsyncRedis
@@ -77,7 +78,7 @@ class RedisCache:
     """
 
     def __init__(self):
-        self._client: Optional[redis.Redis] = None
+        self._client: redis.Redis | None = None
 
     @property
     def client(self) -> redis.Redis:
@@ -94,7 +95,7 @@ class RedisCache:
             )
         return self._client
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """Get value from cache."""
         if not REDIS_ENABLED:
             return None
@@ -111,7 +112,7 @@ class RedisCache:
         self,
         key: str,
         value: Any,
-        ttl: Union[int, timedelta] = DEFAULT_TTL,
+        ttl: int | timedelta = DEFAULT_TTL,
     ) -> bool:
         """Set value in cache with TTL."""
         if not REDIS_ENABLED:
@@ -158,7 +159,7 @@ class RedisCache:
         except redis.RedisError:
             return False
 
-    def increment(self, key: str, amount: int = 1) -> Optional[int]:
+    def increment(self, key: str, amount: int = 1) -> int | None:
         """Increment a counter (for rate limiting)."""
         if not REDIS_ENABLED:
             return None
@@ -184,7 +185,7 @@ class AsyncRedisCache:
     """
 
     def __init__(self):
-        self._client: Optional[AsyncRedis] = None
+        self._client: AsyncRedis | None = None
 
     async def connect(self) -> None:
         """Initialize async Redis connection."""
@@ -212,7 +213,7 @@ class AsyncRedisCache:
             raise RuntimeError("Redis not connected. Call connect() first.")
         return self._client
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         """Get value from cache."""
         if not REDIS_ENABLED:
             return None
@@ -229,7 +230,7 @@ class AsyncRedisCache:
         self,
         key: str,
         value: Any,
-        ttl: Union[int, timedelta] = DEFAULT_TTL,
+        ttl: int | timedelta = DEFAULT_TTL,
     ) -> bool:
         """Set value in cache with TTL."""
         if not REDIS_ENABLED:
@@ -265,8 +266,8 @@ class AsyncRedisCache:
 
 def cached(
     namespace: str,
-    ttl: Union[int, timedelta] = DEFAULT_TTL,
-    key_builder: Optional[Callable[..., str]] = None,
+    ttl: int | timedelta = DEFAULT_TTL,
+    key_builder: Callable[..., str] | None = None,
 ):
     """
     Decorator to cache function results in Redis.
@@ -309,8 +310,8 @@ def cached(
 
 def async_cached(
     namespace: str,
-    ttl: Union[int, timedelta] = DEFAULT_TTL,
-    key_builder: Optional[Callable[..., str]] = None,
+    ttl: int | timedelta = DEFAULT_TTL,
+    key_builder: Callable[..., str] | None = None,
 ):
     """
     Async decorator to cache function results in Redis.

@@ -11,14 +11,15 @@ Tests API endpoints with real (or mocked) dependencies:
 Run with: pytest tests/integration -v
 """
 
-import pytest
+# Import the FastAPI app
+import sys
 from datetime import datetime
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
-# Import the FastAPI app
-import sys
 sys.path.insert(0, ".")
 
 
@@ -282,8 +283,9 @@ class TestCaching:
 
     def test_cache_decorator(self):
         """Cached decorator should work correctly."""
-        from api.cache.redis_cache import cached
         from datetime import timedelta
+
+        from api.cache.redis_cache import cached
 
         call_count = 0
 

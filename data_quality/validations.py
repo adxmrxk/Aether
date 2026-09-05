@@ -12,7 +12,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from google.cloud import bigquery
 
@@ -59,7 +59,7 @@ def run_checkpoint(
     context,
     checkpoint_name: str,
     table_name: str,
-    query: Optional[str] = None,
+    query: str | None = None,
 ) -> ValidationResult:
     """
     Run a Great Expectations checkpoint.

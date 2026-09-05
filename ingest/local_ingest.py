@@ -24,7 +24,7 @@ import os
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import redis
@@ -302,14 +302,14 @@ def consume(sub_path: str) -> None:
             "type": "google.cloud.pubsub.topic.v1.messagePublished",
             "source": f"//pubsub.googleapis.com/projects/{PROJECT_ID}/topics/{TOPIC_ID}",
             "id": message.message_id or str(uuid.uuid4()),
-            "time": datetime.now(timezone.utc).isoformat(),
+            "time": datetime.now(UTC).isoformat(),
             "datacontenttype": "application/json",
             "data": {
                 "message": {
                     "data": base64.b64encode(message.data).decode("utf-8"),
                     "attributes": dict(message.attributes),
                     "messageId": message.message_id,
-                    "publishTime": datetime.now(timezone.utc).isoformat(),
+                    "publishTime": datetime.now(UTC).isoformat(),
                 },
                 "subscription": sub_path,
             },
@@ -379,7 +379,7 @@ def rebuild_gold() -> None:
         return
 
     symbol_list = ", ".join(sql_str(s) for s in latest)
-    hour_str = datetime.now(timezone.utc).replace(
+    hour_str = datetime.now(UTC).replace(
         minute=0, second=0, microsecond=0
     ).isoformat()
 
