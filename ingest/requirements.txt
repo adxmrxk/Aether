@@ -1,0 +1,8 @@
+# Local ingest worker. Upper bounds for the same resolver reason as api/.
+google-cloud-bigquery>=3.20.0,<4.0.0
+google-cloud-pubsub>=2.20.0,<3.0.0
+google-cloud-aiplatform>=1.50.0,<2.0.0
+redis>=5.0.0,<7.0.0
+requests>=2.31.0,<3.0.0
+# Kafka transport (INGEST_TRANSPORT=kafka).
+confluent-kafka>=2.3.0,<3.0.0
