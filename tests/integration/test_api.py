@@ -15,7 +15,7 @@ import pytest
 from datetime import datetime
 from unittest.mock import MagicMock, patch, AsyncMock
 from fastapi.testclient import TestClient
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
 # Import the FastAPI app
 import sys
@@ -62,9 +62,40 @@ def mock_bigquery_client():
         ),
     ]
 
-    mock_job = MagicMock()
-    mock_job.result.return_value = mock_results
-    mock_client.query.return_value = mock_job
+    # The hourly rollup has a different shape to the latest-sentiment table.
+    # Returning the rows above for every query made the history endpoint fail on
+    # a missing hour_timestamp, so dispatch on which table the SQL targets.
+    hourly_results = [
+        MockBigQueryRow(
+            hour_timestamp=datetime.utcnow(),
+            symbol="BTC",
+            avg_sentiment_score=7.4,
+            sentiment_category="BULLISH",
+            avg_price_usd=67480.0,
+            avg_percent_change_24h=2.4,
+            avg_volume_24h=27900000000,
+            record_count=4,
+        ),
+        MockBigQueryRow(
+            hour_timestamp=datetime.utcnow(),
+            symbol="BTC",
+            avg_sentiment_score=7.1,
+            sentiment_category="BULLISH",
+            avg_price_usd=67200.0,
+            avg_percent_change_24h=1.9,
+            avg_volume_24h=27500000000,
+            record_count=5,
+        ),
+    ]
+
+    def query_side_effect(sql, *args, **kwargs):
+        job = MagicMock()
+        job.result.return_value = (
+            hourly_results if "gold_hourly_sentiment" in sql else mock_results
+        )
+        return job
+
+    mock_client.query.side_effect = query_side_effect
 
     return mock_client
 
@@ -162,9 +193,12 @@ class TestSentimentEndpoints:
 
     def test_invalid_symbol_returns_404(self, test_client, mock_bigquery_client):
         """Should return 404 for unknown symbol."""
-        # Override mock to return empty results
+        # Override mock to return empty results. The fixture installs a
+        # side_effect to vary rows by table, and side_effect wins over
+        # return_value, so it has to be cleared first.
         mock_job = MagicMock()
         mock_job.result.return_value = []
+        mock_bigquery_client.query.side_effect = None
         mock_bigquery_client.query.return_value = mock_job
 
         response = test_client.get("/api/v1/sentiment/INVALID")
@@ -292,13 +326,45 @@ class TestInputValidation:
 class TestAsyncEndpoints:
     """Async tests for WebSocket and streaming."""
 
-    async def test_websocket_connection(self):
-        """WebSocket should accept connections."""
+    async def test_asgi_app_responds(self):
+        """The ASGI app should serve a request without a live server."""
         from api.main import app
 
-        async with AsyncClient(app=app, base_url="http://test") as client:
-            # WebSocket tests would go here
-            pass
+        # httpx dropped the `app=` shortcut; drive the app through ASGITransport.
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/health")
+            assert response.status_code == 200
+            assert "status" in response.json()
+
+
+class TestWebSocketStream:
+    """Tests for the live WebSocket stream."""
+
+    def test_websocket_accepts_and_greets(self, test_client):
+        """Connecting should be accepted and receive the welcome frame."""
+        with test_client.websocket_connect("/ws/stream?symbols=BTC,ETH") as ws:
+            welcome = ws.receive_json()
+            assert welcome["type"] == "system_status"
+            assert welcome["data"]["status"] == "connected"
+            assert welcome["data"]["subscriptions"] == ["BTC", "ETH"]
+
+    def test_websocket_ping_pong(self, test_client):
+        """A ping action should come back as a heartbeat."""
+        with test_client.websocket_connect("/ws/stream") as ws:
+            ws.receive_json()  # welcome
+            ws.send_json({"action": "ping"})
+            reply = ws.receive_json()
+            assert reply["type"] == "heartbeat"
+            assert reply["data"]["pong"] is True
+
+    def test_websocket_subscribe(self, test_client):
+        """Subscribing should acknowledge the requested symbols."""
+        with test_client.websocket_connect("/ws/stream") as ws:
+            ws.receive_json()  # welcome
+            ws.send_json({"action": "subscribe", "symbols": ["SOL"]})
+            reply = ws.receive_json()
+            assert reply["data"]["subscribed"] == ["SOL"]
 
 
 # Fixtures for test data
