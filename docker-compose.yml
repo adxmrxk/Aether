@@ -1,8 +1,6 @@
-version: '3.8'
-
 # AetherFlow Local Development Environment
-# Run: docker-compose up -d
-# Stop: docker-compose down
+# Run: docker compose up -d
+# Stop: docker compose down
 
 services:
   # ============================================================================
@@ -12,15 +10,19 @@ services:
   # FastAPI Backend
   api:
     build:
-      context: ./api
-      dockerfile: Dockerfile
+      # Context is the repo root: the app imports the sibling `streaming` package.
+      context: .
+      dockerfile: api/Dockerfile
     ports:
       - "8080:8080"
     environment:
       - GCP_PROJECT_ID=${GCP_PROJECT_ID:-local-dev}
       - BIGQUERY_DATASET=aether_lakehouse
+      - BIGQUERY_EMULATOR_HOST=bigquery-emulator:9050
+      - PUBSUB_EMULATOR_HOST=pubsub-emulator:8085
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - STREAM_CHANNEL=aether:stream
       - PINECONE_API_KEY=${PINECONE_API_KEY:-}
       - PINECONE_INDEX=aether-market-vectors
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
@@ -28,15 +30,101 @@ services:
     depends_on:
       - redis
       - kafka
+      - bigquery-emulator
     volumes:
-      - ./api:/app:ro
+      - ./api:/app/api:ro
+      - ./streaming:/app/streaming:ro
     networks:
       - aether-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      # The image has no curl; use the interpreter that is guaranteed present.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 30s
+
+  # The Cloud Function, run locally under functions-framework. This is the same
+  # handler that `make deploy-function` ships to Cloud Functions Gen2; the
+  # ingest worker delivers CloudEvents to it in place of Eventarc.
+  function:
+    build:
+      context: .
+      dockerfile: functions/market_processor/Dockerfile
+    ports:
+      # 8081 is schema-registry; the function gets 8083.
+      - "8083:8080"
+    environment:
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-local-dev}
+      - BIGQUERY_DATASET=aether_lakehouse
+      - BIGQUERY_TABLE=bronze_raw_data
+      - BIGQUERY_EMULATOR_HOST=bigquery-emulator:9050
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - STREAM_CHANNEL=aether:stream
+      - PINECONE_API_KEY=${PINECONE_API_KEY:-}
+      - PINECONE_INDEX=aether-market-vectors
+    depends_on:
+      - redis
+      - bigquery-emulator
+    volumes:
+      - ./functions/market_processor:/app:ro
+    networks:
+      - aether-network
+    restart: unless-stopped
+
+  # Kafka ingestion worker: the alternative transport to Pub/Sub. Idle unless
+  # INGEST_TRANSPORT=kafka, since both paths write to the same Bronze table.
+  kafka-worker:
+    build:
+      context: .
+      dockerfile: kafka/Dockerfile
+    environment:
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-local-dev}
+      - INGEST_TRANSPORT=${INGEST_TRANSPORT:-pubsub}
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - SCHEMA_REGISTRY_URL=http://schema-registry:8081
+      - FUNCTION_URL=http://function:8080
+    depends_on:
+      - kafka
+      - function
+    volumes:
+      - ./kafka:/app/kafka:ro
+    networks:
+      - aether-network
+    restart: unless-stopped
+
+  # Local ingest worker: publishes market data to Pub/Sub, forwards messages to
+  # the function as CloudEvents, and aggregates Bronze into Gold. Stands in for
+  # Cloud Scheduler, Eventarc and dbt, which have no local equivalents.
+  ingest:
+    build:
+      context: .
+      dockerfile: ingest/Dockerfile
+    environment:
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-local-dev}
+      - BIGQUERY_DATASET=aether_lakehouse
+      - BIGQUERY_EMULATOR_HOST=bigquery-emulator:9050
+      - PUBSUB_EMULATOR_HOST=pubsub-emulator:8085
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - STREAM_CHANNEL=aether:stream
+      - INGEST_INTERVAL_SECONDS=${INGEST_INTERVAL_SECONDS:-60}
+      - INGEST_COINS=${INGEST_COINS:-bitcoin,ethereum,solana,cardano,ripple,dogecoin}
+      - FUNCTION_URL=http://function:8080
+      - GOLD_REBUILD_SECONDS=${GOLD_REBUILD_SECONDS:-30}
+      - INGEST_TRANSPORT=${INGEST_TRANSPORT:-pubsub}
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    depends_on:
+      - redis
+      - bigquery-emulator
+      - pubsub-emulator
+      - function
+    volumes:
+      - ./ingest:/app/ingest:ro
+    networks:
+      - aether-network
+    restart: unless-stopped
 
   # ============================================================================
   # Data Infrastructure
